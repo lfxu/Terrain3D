@@ -50,13 +50,8 @@ private:
 
 	// Meshes and Mesh instances
 	Vector<RID> _meshes;
-	struct Instances {
-		RID cross;
-		Vector<RID> tiles;
-		Vector<RID> fillers;
-		Vector<RID> trims;
-		Vector<RID> seams;
-	} _data;
+	RID _tile_multimesh;
+	RID _tile_mm_instance;
 
 	// Renderer settings
 	uint32_t _render_layers = 1;

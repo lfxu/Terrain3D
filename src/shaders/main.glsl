@@ -120,7 +120,12 @@ void vertex() {
 	v_region = get_region_uv(UV);
 	uint control = texelFetch(_control_maps, v_region, 0).r;
 	bool hole = bool(control >>2u & 0x1u);
-	if ( hole || (_background_mode == 0 && v_region.z < 0) ) {
+	vec4 bounds = INSTANCE_CUSTOM;
+	if ( hole || (_background_mode == 0 && v_region.z < 0)
+		|| v_vertex.x < bounds.x - 0.01
+		|| v_vertex.x > bounds.z + 0.01
+		|| v_vertex.z < bounds.y - 0.01
+		|| v_vertex.z > bounds.w + 0.01) {
 		VERTEX.x = 0./0.;
 	} else {
 		// UV coordinates in region space + texel offset. Values are 0 to 1 within regions
@@ -134,7 +139,9 @@ void vertex() {
 	}
 
 	// Transform UVs to local to avoid poor precision during varying interpolation.
-	v_uv_offset = MODEL_MATRIX[3].xz * _mesh_vertex_density;
+	// Uses per patch bounds center as offsets
+	vec2 center = vec2((bounds.x + bounds.z) * 0.5, (bounds.y + bounds.w) * 0.5);
+	v_uv_offset = center * _mesh_vertex_density;
 	UV -= v_uv_offset;
 	v_uv2_offset = v_uv_offset * _region_texel_size;
 	UV2 -= v_uv2_offset;

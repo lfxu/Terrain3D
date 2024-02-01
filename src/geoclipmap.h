@@ -17,14 +17,6 @@ private:
 	static RID _create_mesh(PackedVector3Array p_vertices, PackedInt32Array p_indices, AABB p_aabb);
 
 public:
-	enum MeshType {
-		TILE,
-		FILLER,
-		TRIM,
-		CROSS,
-		SEAM,
-	};
-
 	static Vector<RID> generate(int p_resolution, int p_clipmap_levels);
 };
 

@@ -149,28 +149,13 @@ void Terrain3D::_find_cameras(TypedArray<Node> from_nodes, Node *excluded_node, 
 void Terrain3D::_clear(bool p_clear_meshes, bool p_clear_collision) {
 	LOG(INFO, "Clearing the terrain");
 	if (p_clear_meshes) {
+		RS->free_rid(_tile_mm_instance);
+		RS->free_rid(_tile_multimesh);
 		for (const RID rid : _meshes) {
-			RS->free_rid(rid);
-		}
-		RS->free_rid(_data.cross);
-		for (const RID rid : _data.tiles) {
-			RS->free_rid(rid);
-		}
-		for (const RID rid : _data.fillers) {
-			RS->free_rid(rid);
-		}
-		for (const RID rid : _data.trims) {
-			RS->free_rid(rid);
-		}
-		for (const RID rid : _data.seams) {
 			RS->free_rid(rid);
 		}
 
 		_meshes.clear();
-		_data.tiles.clear();
-		_data.fillers.clear();
-		_data.trims.clear();
-		_data.seams.clear();
 		_initialized = false;
 	}
 
@@ -192,50 +177,20 @@ void Terrain3D::_build(int p_mesh_lods, int p_mesh_size) {
 
 	// Set the current terrain material on all meshes
 	RID material_rid = _material->get_material_rid();
-	for (const RID rid : _meshes) {
-		RS->mesh_surface_set_material(rid, 0, material_rid);
-	}
+	RS->mesh_surface_set_material(_meshes[0], 0, material_rid);
 
 	LOG(DEBUG, "Creating mesh instances");
 
 	// Get current visual scenario so the instances appear in the scene
 	RID scenario = get_world_3d()->get_scenario();
 
-	_data.cross = RS->instance_create2(_meshes[GeoClipMap::CROSS], scenario);
-	RS->instance_geometry_set_cast_shadows_setting(_data.cross, RenderingServer::ShadowCastingSetting(_shadow_casting));
-	RS->instance_set_layer_mask(_data.cross, _render_layers);
-
-	for (int l = 0; l < p_mesh_lods; l++) {
-		for (int x = 0; x < 4; x++) {
-			for (int y = 0; y < 4; y++) {
-				if (l != 0 && (x == 1 || x == 2) && (y == 1 || y == 2)) {
-					continue;
-				}
-
-				RID tile = RS->instance_create2(_meshes[GeoClipMap::TILE], scenario);
-				RS->instance_geometry_set_cast_shadows_setting(tile, RenderingServer::ShadowCastingSetting(_shadow_casting));
-				RS->instance_set_layer_mask(tile, _render_layers);
-				_data.tiles.push_back(tile);
-			}
-		}
-
-		RID filler = RS->instance_create2(_meshes[GeoClipMap::FILLER], scenario);
-		RS->instance_geometry_set_cast_shadows_setting(filler, RenderingServer::ShadowCastingSetting(_shadow_casting));
-		RS->instance_set_layer_mask(filler, _render_layers);
-		_data.fillers.push_back(filler);
-
-		if (l != p_mesh_lods - 1) {
-			RID trim = RS->instance_create2(_meshes[GeoClipMap::TRIM], scenario);
-			RS->instance_geometry_set_cast_shadows_setting(trim, RenderingServer::ShadowCastingSetting(_shadow_casting));
-			RS->instance_set_layer_mask(trim, _render_layers);
-			_data.trims.push_back(trim);
-
-			RID seam = RS->instance_create2(_meshes[GeoClipMap::SEAM], scenario);
-			RS->instance_geometry_set_cast_shadows_setting(seam, RenderingServer::ShadowCastingSetting(_shadow_casting));
-			RS->instance_set_layer_mask(seam, _render_layers);
-			_data.seams.push_back(seam);
-		}
-	}
+	_tile_multimesh = RS->multimesh_create();
+	RS->multimesh_set_mesh(_tile_multimesh, _meshes[0]);
+	RS->multimesh_allocate_data(_tile_multimesh, p_mesh_lods * 12 + 4, RenderingServer::MULTIMESH_TRANSFORM_3D, true, true);
+	RS->multimesh_set_visible_instances(_tile_multimesh, p_mesh_lods * 12 + 4);
+	_tile_mm_instance = RS->instance_create2(_tile_multimesh, scenario);
+	RS->instance_geometry_set_cast_shadows_setting(_tile_mm_instance, RenderingServer::ShadowCastingSetting(_shadow_casting));
+	RS->instance_set_layer_mask(_tile_mm_instance, _render_layers);
 
 	update_aabbs();
 	// Force a snap update
@@ -444,38 +399,10 @@ void Terrain3D::_update_instances() {
 	RID _scenario = get_world_3d()->get_scenario();
 
 	bool v = is_visible_in_tree();
-	RS->instance_set_visible(_data.cross, v);
-	RS->instance_set_scenario(_data.cross, _scenario);
-	RS->instance_geometry_set_cast_shadows_setting(_data.cross, RenderingServer::ShadowCastingSetting(_shadow_casting));
-	RS->instance_set_layer_mask(_data.cross, _render_layers);
-
-	for (const RID rid : _data.tiles) {
-		RS->instance_set_visible(rid, v);
-		RS->instance_set_scenario(rid, _scenario);
-		RS->instance_geometry_set_cast_shadows_setting(rid, RenderingServer::ShadowCastingSetting(_shadow_casting));
-		RS->instance_set_layer_mask(rid, _render_layers);
-	}
-
-	for (const RID rid : _data.fillers) {
-		RS->instance_set_visible(rid, v);
-		RS->instance_set_scenario(rid, _scenario);
-		RS->instance_geometry_set_cast_shadows_setting(rid, RenderingServer::ShadowCastingSetting(_shadow_casting));
-		RS->instance_set_layer_mask(rid, _render_layers);
-	}
-
-	for (const RID rid : _data.trims) {
-		RS->instance_set_visible(rid, v);
-		RS->instance_set_scenario(rid, _scenario);
-		RS->instance_geometry_set_cast_shadows_setting(rid, RenderingServer::ShadowCastingSetting(_shadow_casting));
-		RS->instance_set_layer_mask(rid, _render_layers);
-	}
-
-	for (const RID rid : _data.seams) {
-		RS->instance_set_visible(rid, v);
-		RS->instance_set_scenario(rid, _scenario);
-		RS->instance_geometry_set_cast_shadows_setting(rid, RenderingServer::ShadowCastingSetting(_shadow_casting));
-		RS->instance_set_layer_mask(rid, _render_layers);
-	}
+	RS->instance_set_visible(_tile_mm_instance, v);
+	RS->instance_set_scenario(_tile_mm_instance, _scenario);
+	RS->instance_geometry_set_cast_shadows_setting(_tile_mm_instance, RenderingServer::ShadowCastingSetting(_shadow_casting));
+	RS->instance_set_layer_mask(_tile_mm_instance, _render_layers);
 }
 
 void Terrain3D::_generate_triangles(PackedVector3Array &p_vertices, PackedVector2Array *p_uvs, int32_t p_lod, Terrain3DStorage::HeightFilter p_filter, bool p_require_nav, AABB const &p_global_aabb) const {
@@ -711,77 +638,93 @@ void Terrain3D::snap(Vector3 p_cam_pos) {
 	p_cam_pos.y = 0;
 	LOG(DEBUG_CONT, "Snapping terrain to: ", String(p_cam_pos));
 
-	Vector3 snapped_pos = (p_cam_pos / _mesh_vertex_spacing).floor() * _mesh_vertex_spacing;
-	Transform3D t = Transform3D().scaled(Vector3(_mesh_vertex_spacing, 1, _mesh_vertex_spacing));
-	t.origin = snapped_pos;
-	RS->instance_set_transform(_data.cross, t);
+	int tiles = 0;
+	real_t scale = _mesh_vertex_spacing;
+	Vector3i snapped = (p_cam_pos / scale / 2).floor();
+	Vector3 snapped_pos = Vector3(snapped) * scale * 2;
+	Vector3 tile_size = Vector3(_mesh_size, 0, _mesh_size) * _mesh_vertex_spacing;
+	float half_tile_size = tile_size.x * 0.5f;
+	Vector4 lod_bounds = Vector4(
+			snapped_pos.x - tile_size.x * 2, snapped_pos.z - tile_size.z * 2,
+			snapped_pos.x + tile_size.x * 2, snapped_pos.z + tile_size.z * 2);
 
-	int edge = 0;
-	int tile = 0;
-
-	for (int l = 0; l < _mesh_lods; l++) {
-		real_t scale = real_t(1 << l) * _mesh_vertex_spacing;
-		Vector3 snapped_pos = (p_cam_pos / scale).floor() * scale;
-		Vector3 tile_size = Vector3(real_t(_mesh_size << l), 0, real_t(_mesh_size << l)) * _mesh_vertex_spacing;
-		Vector3 base = snapped_pos - Vector3(real_t(_mesh_size << (l + 1)), 0, real_t(_mesh_size << (l + 1))) * _mesh_vertex_spacing;
-
-		// Position tiles
-		for (int x = 0; x < 4; x++) {
-			for (int y = 0; y < 4; y++) {
-				if (l != 0 && (x == 1 || x == 2) && (y == 1 || y == 2)) {
-					continue;
-				}
-
-				Vector3 fill = Vector3(x >= 2 ? 1 : 0, 0, y >= 2 ? 1 : 0) * scale;
-				Vector3 tile_tl = base + Vector3(x, 0, y) * tile_size + fill;
-				//Vector3 tile_br = tile_tl + tile_size;
-
-				Transform3D t = Transform3D().scaled(Vector3(scale, 1, scale));
-				t.origin = tile_tl;
-
-				RS->instance_set_transform(_data.tiles[tile], t);
-
-				tile++;
-			}
-		}
-		{
+	for (int x = 0; x < 4; x++) {
+		for (int y = 0; y < 4; y++) {
+			// TODO: frustum culling on the tiles
 			Transform3D t = Transform3D().scaled(Vector3(scale, 1, scale));
-			t.origin = snapped_pos;
-			RS->instance_set_transform(_data.fillers[l], t);
-		}
-
-		if (l != _mesh_lods - 1) {
-			real_t next_scale = scale * 2.0f;
-			Vector3 next_snapped_pos = (p_cam_pos / next_scale).floor() * next_scale;
-
-			// Position trims
-			{
-				Vector3 tile_center = snapped_pos + (Vector3(scale, 0, scale) * 0.5f);
-				Vector3 d = p_cam_pos - next_snapped_pos;
-
-				int r = 0;
-				r |= d.x >= scale ? 0 : 2;
-				r |= d.z >= scale ? 0 : 1;
-
-				real_t rotations[4] = { 0.0, 270.0, 90, 180.0 };
-
-				real_t angle = UtilityFunctions::deg_to_rad(rotations[r]);
-				Transform3D t = Transform3D().rotated(Vector3(0, 1, 0), -angle);
-				t = t.scaled(Vector3(scale, 1, scale));
-				t.origin = tile_center;
-				RS->instance_set_transform(_data.trims[edge], t);
-			}
-
-			// Position seams
-			{
-				Vector3 next_base = next_snapped_pos - Vector3(real_t(_mesh_size << (l + 1)), 0, real_t(_mesh_size << (l + 1))) * _mesh_vertex_spacing;
-				Transform3D t = Transform3D().scaled(Vector3(scale, 1, scale));
-				t.origin = next_base;
-				RS->instance_set_transform(_data.seams[edge], t);
-			}
-			edge++;
+			t.origin = Vector3(x - 1.5f, 0, y - 1.5f) * tile_size + Vector3(snapped_pos.x, 0, snapped_pos.z);
+			RS->multimesh_instance_set_transform(_tile_multimesh, tiles, t);
+			float min_x = t.origin.x - half_tile_size;
+			float min_z = t.origin.z - half_tile_size;
+			float max_x = t.origin.x + half_tile_size;
+			float max_z = t.origin.z + half_tile_size;
+			RS->multimesh_instance_set_custom_data(_tile_multimesh, tiles, Color(min_x, min_z, max_x, max_z));
+			tiles++;
 		}
 	}
+	int snap_x_odd = abs(snapped.x % 2);
+	int snap_z_odd = abs(snapped.z % 2);
+
+	for (int l = 1; l < _mesh_lods; ++l) {
+		scale = real_t(1 << l) * _mesh_vertex_spacing;
+		snapped = (p_cam_pos / scale / 2).floor();
+		snapped_pos = Vector3(snapped) * scale * 2;
+		tile_size = Vector3(real_t(_mesh_size << l), 0, real_t(_mesh_size << l)) * _mesh_vertex_spacing;
+		half_tile_size = tile_size.x * 0.5f;
+		Vector4 last_lod_bounds = lod_bounds;
+		lod_bounds = Vector4(
+				snapped_pos.x - tile_size.x * 2, snapped_pos.z - tile_size.z * 2,
+				snapped_pos.x + tile_size.x * 2, snapped_pos.z + tile_size.z * 2);
+		float x_bounds[5] = { lod_bounds[0], last_lod_bounds[0], snapped_pos.x + snap_x_odd * scale, last_lod_bounds[2], lod_bounds[2] };
+		float z_bounds[5] = { lod_bounds[1], last_lod_bounds[1], snapped_pos.z + snap_z_odd * scale, last_lod_bounds[3], lod_bounds[3] };
+		for (int x = 0; x < 4; x++) {
+			for (int y = 0; y < 4; y++) {
+				if ((x == 1 || x == 2) && (y == 1 || y == 2)) {
+					continue;
+				}
+				// TODO: frustum culling on the tiles
+				Transform3D t = Transform3D().scaled(Vector3(scale, 1, scale));
+				if (x == 3 || y == 3) {
+					t.rotate(Vector3(0, 1, 0), Math_PI);
+				}
+				Vector3 origin = Vector3(x - 1.5f, 0, y - 1.5f);
+				Vector3 adjustment = Vector3(snap_x_odd, 0, snap_z_odd);
+				if ((y > 0 && y < 3) || (x > 0 && x < 3)) {
+					if (x == 0) {
+						adjustment.x -= 1;
+					} else if (x == 3) {
+						adjustment.x += 1;
+					} else if (y == 0) {
+						adjustment.z -= 1;
+					} else if (y == 3) {
+						adjustment.z += 1;
+					}
+				} else if (x == 3 && y == 0) {
+					adjustment.z -= 1;
+				} else if (x == 0 && y == 3) {
+					adjustment.x -= 1;
+				}
+				t.origin = origin * tile_size + snapped_pos + adjustment * scale;
+				float min_x = x_bounds[x];
+				float min_z = z_bounds[y];
+				float max_x = x_bounds[x + 1];
+				float max_z = z_bounds[y + 1];
+				RS->multimesh_instance_set_transform(_tile_multimesh, tiles, t);
+				RS->multimesh_instance_set_custom_data(_tile_multimesh, tiles, Color(min_x, min_z, max_x, max_z));
+				tiles++;
+			}
+		}
+		snap_x_odd = abs(snapped.x % 2);
+		snap_z_odd = abs(snapped.z % 2);
+	}
+
+	RS->multimesh_set_visible_instances(_tile_multimesh, tiles);
+
+	AABB aabb = AABB(snapped_pos - tile_size * 2, tile_size * 4);
+	aabb.position.y = _storage->get_height_range().x;
+	aabb.size.y = _storage->get_height_range().y - _storage->get_height_range().x;
+	RS->instance_set_custom_aabb(_tile_mm_instance, aabb);
+	RS->instance_set_extra_visibility_margin(_tile_mm_instance, _cull_margin);
 }
 
 void Terrain3D::update_aabbs() {
@@ -793,44 +736,6 @@ void Terrain3D::update_aabbs() {
 	Vector2 height_range = _storage->get_height_range();
 	LOG(DEBUG_CONT, "Updating AABBs. Total height range: ", height_range, ", extra cull margin: ", _cull_margin);
 	height_range.y += abs(height_range.x); // Add below zero to total size
-
-	AABB aabb = RS->mesh_get_custom_aabb(_meshes[GeoClipMap::CROSS]);
-	aabb.position.y = height_range.x;
-	aabb.size.y = height_range.y;
-	RS->instance_set_custom_aabb(_data.cross, aabb);
-	RS->instance_set_extra_visibility_margin(_data.cross, _cull_margin);
-
-	aabb = RS->mesh_get_custom_aabb(_meshes[GeoClipMap::TILE]);
-	aabb.position.y = height_range.x;
-	aabb.size.y = height_range.y;
-	for (int i = 0; i < _data.tiles.size(); i++) {
-		RS->instance_set_custom_aabb(_data.tiles[i], aabb);
-		RS->instance_set_extra_visibility_margin(_data.tiles[i], _cull_margin);
-	}
-
-	aabb = RS->mesh_get_custom_aabb(_meshes[GeoClipMap::FILLER]);
-	aabb.position.y = height_range.x;
-	aabb.size.y = height_range.y;
-	for (int i = 0; i < _data.fillers.size(); i++) {
-		RS->instance_set_custom_aabb(_data.fillers[i], aabb);
-		RS->instance_set_extra_visibility_margin(_data.fillers[i], _cull_margin);
-	}
-
-	aabb = RS->mesh_get_custom_aabb(_meshes[GeoClipMap::TRIM]);
-	aabb.position.y = height_range.x;
-	aabb.size.y = height_range.y;
-	for (int i = 0; i < _data.trims.size(); i++) {
-		RS->instance_set_custom_aabb(_data.trims[i], aabb);
-		RS->instance_set_extra_visibility_margin(_data.trims[i], _cull_margin);
-	}
-
-	aabb = RS->mesh_get_custom_aabb(_meshes[GeoClipMap::SEAM]);
-	aabb.position.y = height_range.x;
-	aabb.size.y = height_range.y;
-	for (int i = 0; i < _data.seams.size(); i++) {
-		RS->instance_set_custom_aabb(_data.seams[i], aabb);
-		RS->instance_set_extra_visibility_margin(_data.seams[i], _cull_margin);
-	}
 }
 
 /* Iterate over ground to find intersection point between two rays:
